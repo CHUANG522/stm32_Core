@@ -9,6 +9,6 @@ void data_proc(void);
 void main_proc(void);
 void key_scan(void);
 void adc_vlo(void);
-void time_show(void);
+void time_show(void); //
 
 #endif

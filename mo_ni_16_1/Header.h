@@ -2,16 +2,18 @@
 #define _HEADER_H
 
 #include "RTE_Components.h" // Component selection
-
-#include <stdio.h>
-#include <stdint.h >
-#include <string.h>
-#include <lcd.h>
+// 基础头文件
 #include <fun.h>
+#include <lcd.h>
 #include <math.h>
+#include <stdint.h >
+#include <stdio.h>
+#include <string.h>
 
-#include "main.h"
+// cubemx生成头文件
 #include "adc.h"
-#include "tim.h"
 #include "gpio.h"
+#include "main.h"
+#include "tim.h"
+
 #endif

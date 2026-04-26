@@ -8,8 +8,8 @@ uint8_t arr_data_R[20], arr_data_T[20], counter_data_R, flag_R;
 float vol_37, vol_38;  // 模拟电压值
 uint32_t fre1, fre2;   // 输入捕获频率
 uint8_t eeprom_data;   // eeprom 写读数据
-
-led_shan led8 = {0, 0, 0, 0, 0, 0};  // 初始化结构体变量
+uint32_t time;
+led_shan led8 = {0, 0, 0, 0};  // 初始化结构体变量
 
 void led_show(uint8_t led, uint8_t mode)
 {  // 勿忘开启PD2 锁存开关
@@ -85,16 +85,16 @@ void lcd_show(void)
         sprintf((char*) string, "Hello world!");
         LCD_DisplayStringLine(Line0, string);
 
-        sprintf((char*) string, "   counter:%d  ", counter);
+        sprintf((char*) string, "   time:%d  ", time % 1000 + 1);
         LCD_DisplayStringLine(Line1, string);
 
-        sprintf((char*) string, "time_counter:%d   ", led8.time_counter);
+        sprintf((char*) string, "time_B1:%d   ", time_B1);
         LCD_DisplayStringLine(Line2, string);
 
-        sprintf((char*) string, "time_B1:%d", time_B1);
+        sprintf((char*) string, "time_data_R :%d", time_data_R);
         LCD_DisplayStringLine(Line3, string);
 
-        sprintf((char*) string, "shan_time:%d", led8.shan_time);
+        sprintf((char*) string, " sd   ");
         LCD_DisplayStringLine(Line4, string);
     }
 }
@@ -168,14 +168,17 @@ void data_proc(void)
     led8.led_last_statu = (counter > 5) ? 1 : 0;
 
     if (led8.time_counter > 2000 && led8.led_flag_en)
-    {  // 闪烁时间和闪烁次数用时间差来控制
-        if (led8.time_counter < 7000)
-        {
-            if (led8.time_counter - led8.shan_time > 100)
-            {
-                led8.led_current_statu ^= 1;
-                led8.shan_time = led8.time_counter;
-            }
+    {
+        if (led8.time_counter <= 7000)
+        {  // 更优化的算发，使用取余实现led闪烁
+           //  三元表达式实现闪烁，时间差每100ms闪烁一次
+            led8.led_current_statu = (led8.time_counter % 200 + 1 <= 100) ? 1 : 0;
+
+            // if (led8.time_counter % 200 + 1 <= 100)
+
+            //     led8.led_current_statu = 1;
+            // else
+            //     led8.led_current_statu = 0;
         }
         else
         {  // 当大于7秒时，闪烁结束，重置所有参数，注意此else是否定的小于于7秒的条件
@@ -183,8 +186,12 @@ void data_proc(void)
             led8.led_current_statu = 0;
         }
     }
+    // led流水灯
+    if (time % 1000 + 1 <= 500)
+        led_show(1, 1);
+    else
+        led_show(1, 0);
 }
-
 void main_proc(void)
 {
     key_scan();

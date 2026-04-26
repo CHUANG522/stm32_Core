@@ -21,7 +21,6 @@ extern uint32_t time;
 typedef struct
 {
     uint8_t led_flag_en;     // 是否开启闪烁1为开
-    uint32_t shan_time;      // 闪烁时间记录
     uint8_t led_last_statu;  //
     uint8_t led_current_statu;
     uint32_t time_counter;

@@ -15,6 +15,7 @@ int fputc(int ch, FILE* f)
 
 int main(void)
 {
+    // 开启时钟
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_USART1, ENABLE);
 
     // *USART

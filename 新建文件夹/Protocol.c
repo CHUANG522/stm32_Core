@@ -3,7 +3,7 @@
  * 文件名: Protocol.c
  * 说明: 通讯协议层实现 - 帧解析、校验、发送
  * 作者: Copilot
- * 版本: V1.0 2026/06/06
+ * 版本: V1.1 2026/06/06 (修复编译警告)
 ************************************************************/
 
 #include "Protocol.h"
@@ -31,7 +31,6 @@ typedef enum {
 static ParseState_t g_parse_state = PARSE_STATE_IDLE;
 static ProtocolFrame_t g_frame_buffer = {0};
 static uint8_t g_data_index = 0;
-static uint8_t g_parse_error = 0;
 
 /*======================== CRC-16-Modbus实现 ========================*/
 uint16_t Protocol_CalcCRC16(const uint8_t *data, uint16_t len)
@@ -153,9 +152,9 @@ void Protocol_SendHeartbeat(uint16_t device_id)
 /*======================== ASCII字符串转十六进制 ========================*/
 static uint8_t Protocol_AsciiToHex(char c)
 {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
+    if (c >= 'A' && c <= 'F') return (uint8_t)(c - 'A' + 10);
+    if (c >= 'a' && c <= 'f') return (uint8_t)(c - 'a' + 10);
     return 0xFF;  /* 非法字符 */
 }
 
@@ -165,16 +164,17 @@ static uint8_t Protocol_Ascii2BytesToByte(const char *ascii)
     uint8_t low = Protocol_AsciiToHex(ascii[1]);
     
     if (high == 0xFF || low == 0xFF) return 0xFF;
-    return (high << 4) | low;
+    return (uint8_t)((high << 4) | low);
 }
 
 /*======================== 帧解析状态机 ========================*/
 
 uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
 {
-    uint8_t byte_val;
     static uint16_t ascii_count = 0;
     static char ascii_buf[512];
+    uint8_t byte_val;
+    uint16_t i;
     
     /* 首次调用时，从接收缓冲区读取ASCII字符串 */
     if (g_parse_state == PARSE_STATE_IDLE) {
@@ -186,17 +186,16 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
         
         /* 查找帧头"A5B6" */
         uint8_t peek_buf[512];
-        uint16_t i = 0;
+        uint16_t frame_end = 0;
         
         Usart1Ring_Peek(peek_buf, count);
         
         /* 查找帧头ASCII字符串 "A5B6" */
-        while (i + 3 < count) {
+        for (i = 0; i + 3 < count; i++) {
             if (peek_buf[i] == 'A' && peek_buf[i+1] == '5' &&
                 peek_buf[i+2] == 'B' && peek_buf[i+3] == '6') {
                 break;  /* 找到帧头 */
             }
-            i++;
         }
         
         if (i + 3 >= count) {
@@ -208,13 +207,11 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
         /* 跳过帧头前的垃圾数据 */
         if (i > 0) {
             Usart1Ring_Skip(i);
+            count = Usart1Ring_GetCount();
+            Usart1Ring_Peek(peek_buf, count);
         }
         
         /* 查找帧尾 "B6A5" */
-        count = Usart1Ring_GetCount();
-        Usart1Ring_Peek(peek_buf, count);
-        
-        uint16_t frame_end = 0;
         for (i = 0; i + 3 < count; i += 2) {
             if (peek_buf[i] == 'B' && peek_buf[i+1] == '6' &&
                 peek_buf[i+2] == 'A' && peek_buf[i+3] == '5') {
@@ -236,30 +233,29 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
         /* 开始解析 */
         g_parse_state = PARSE_STATE_HEADER_BYTE2;
         g_data_index = 0;
-        g_parse_error = 0;
     }
     
     /* 状态机逐字节解析 */
-    uint8_t ascii_pos = 0;
+    uint16_t ascii_pos = 0;
     
     switch (g_parse_state) {
         case PARSE_STATE_HEADER_BYTE2:
-            g_frame_buffer.frame_header = 0xA5B6;  /* 已知帧头 */
+            g_frame_buffer.frame_header = 0xA5B6;
             g_parse_state = PARSE_STATE_DEVICE_ID_BYTE1;
             ascii_pos = 4;
             break;
             
         case PARSE_STATE_DEVICE_ID_BYTE1:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
-            g_frame_buffer.device_id = byte_val << 8;
+            if (byte_val == 0xFF) goto PARSE_ERROR;
+            g_frame_buffer.device_id = (uint16_t)(byte_val << 8);
             g_parse_state = PARSE_STATE_DEVICE_ID_BYTE2;
             ascii_pos += 2;
             break;
             
         case PARSE_STATE_DEVICE_ID_BYTE2:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.device_id |= byte_val;
             g_parse_state = PARSE_STATE_FRAME_TYPE;
             ascii_pos += 2;
@@ -267,7 +263,7 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
             
         case PARSE_STATE_FRAME_TYPE:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.frame_type = byte_val;
             g_parse_state = PARSE_STATE_CMD_BYTE1;
             ascii_pos += 2;
@@ -275,15 +271,15 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
             
         case PARSE_STATE_CMD_BYTE1:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
-            g_frame_buffer.cmd_word = byte_val << 8;
+            if (byte_val == 0xFF) goto PARSE_ERROR;
+            g_frame_buffer.cmd_word = (uint16_t)(byte_val << 8);
             g_parse_state = PARSE_STATE_CMD_BYTE2;
             ascii_pos += 2;
             break;
             
         case PARSE_STATE_CMD_BYTE2:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.cmd_word |= byte_val;
             g_parse_state = PARSE_STATE_DATA_LEN;
             ascii_pos += 2;
@@ -291,16 +287,16 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
             
         case PARSE_STATE_DATA_LEN:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.data_len = byte_val;
-            if (g_frame_buffer.data_len > 256) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (g_frame_buffer.data_len > 256) goto PARSE_ERROR;
             g_parse_state = PARSE_STATE_PROTOCOL_VER;
             ascii_pos += 2;
             break;
             
         case PARSE_STATE_PROTOCOL_VER:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.protocol_version = byte_val;
             g_data_index = 0;
             g_parse_state = PARSE_STATE_DATA;
@@ -310,30 +306,29 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
         case PARSE_STATE_DATA:
             if (g_data_index < g_frame_buffer.data_len) {
                 byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-                if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+                if (byte_val == 0xFF) goto PARSE_ERROR;
                 g_frame_buffer.data[g_data_index++] = byte_val;
                 ascii_pos += 2;
                 
                 if (g_data_index < g_frame_buffer.data_len) {
-                    /* 继续读取数据 */
                     return 0;
                 }
             }
             g_parse_state = PARSE_STATE_CRC_BYTE1;
-            ascii_pos += (g_frame_buffer.data_len - g_data_index + 1) * 2;
+            ascii_pos += (uint16_t)((g_frame_buffer.data_len - g_data_index + 1) * 2);
             break;
             
         case PARSE_STATE_CRC_BYTE1:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
-            g_frame_buffer.crc16 = byte_val << 8;
+            if (byte_val == 0xFF) goto PARSE_ERROR;
+            g_frame_buffer.crc16 = (uint16_t)(byte_val << 8);
             g_parse_state = PARSE_STATE_CRC_BYTE2;
             ascii_pos += 2;
             break;
             
         case PARSE_STATE_CRC_BYTE2:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.crc16 |= byte_val;
             g_parse_state = PARSE_STATE_TAIL_BYTE1;
             ascii_pos += 2;
@@ -341,44 +336,44 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
             
         case PARSE_STATE_TAIL_BYTE1:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
-            g_frame_buffer.frame_tail = byte_val << 8;
+            if (byte_val == 0xFF) goto PARSE_ERROR;
+            g_frame_buffer.frame_tail = (uint16_t)(byte_val << 8);
             g_parse_state = PARSE_STATE_TAIL_BYTE2;
             ascii_pos += 2;
             break;
             
         case PARSE_STATE_TAIL_BYTE2:
             byte_val = Protocol_Ascii2BytesToByte(&ascii_buf[ascii_pos]);
-            if (byte_val == 0xFF) { g_parse_error = 1; goto PARSE_ERROR; }
+            if (byte_val == 0xFF) goto PARSE_ERROR;
             g_frame_buffer.frame_tail |= byte_val;
             
             /* 验证帧尾 */
             if (g_frame_buffer.frame_tail != FRAME_TAIL) {
-                g_parse_error = 1;
                 goto PARSE_ERROR;
             }
             
             /* 验证CRC */
-            uint8_t crc_buf[512];
-            uint16_t crc_len = 13 + g_frame_buffer.data_len;  /* 帧头到内容末尾 */
-            uint16_t crc_calc;
-            
-            crc_buf[0] = 0xA5;
-            crc_buf[1] = 0xB6;
-            crc_buf[2] = (g_frame_buffer.device_id >> 8) & 0xFF;
-            crc_buf[3] = g_frame_buffer.device_id & 0xFF;
-            crc_buf[4] = g_frame_buffer.frame_type;
-            crc_buf[5] = (g_frame_buffer.cmd_word >> 8) & 0xFF;
-            crc_buf[6] = g_frame_buffer.cmd_word & 0xFF;
-            crc_buf[7] = g_frame_buffer.data_len;
-            crc_buf[8] = g_frame_buffer.protocol_version;
-            memcpy(&crc_buf[9], g_frame_buffer.data, g_frame_buffer.data_len);
-            
-            crc_calc = Protocol_CalcCRC16(crc_buf, crc_len);
-            
-            if (crc_calc != g_frame_buffer.crc16) {
-                g_parse_error = 1;
-                goto PARSE_ERROR;
+            {
+                uint8_t crc_buf[512];
+                uint16_t crc_len = (uint16_t)(13 + g_frame_buffer.data_len);
+                uint16_t crc_calc;
+                
+                crc_buf[0] = 0xA5;
+                crc_buf[1] = 0xB6;
+                crc_buf[2] = (uint8_t)((g_frame_buffer.device_id >> 8) & 0xFF);
+                crc_buf[3] = (uint8_t)(g_frame_buffer.device_id & 0xFF);
+                crc_buf[4] = g_frame_buffer.frame_type;
+                crc_buf[5] = (uint8_t)((g_frame_buffer.cmd_word >> 8) & 0xFF);
+                crc_buf[6] = (uint8_t)(g_frame_buffer.cmd_word & 0xFF);
+                crc_buf[7] = g_frame_buffer.data_len;
+                crc_buf[8] = g_frame_buffer.protocol_version;
+                memcpy(&crc_buf[9], g_frame_buffer.data, g_frame_buffer.data_len);
+                
+                crc_calc = Protocol_CalcCRC16(crc_buf, crc_len);
+                
+                if (crc_calc != g_frame_buffer.crc16) {
+                    goto PARSE_ERROR;
+                }
             }
             
             /* 帧解析成功 */
@@ -390,19 +385,18 @@ uint8_t Protocol_ParseFrame(ProtocolFrame_t *frame)
             
             /* 复位状态机 */
             g_parse_state = PARSE_STATE_IDLE;
-            return 1;  /* 解析成功 */
+            return 1;
             
         default:
             break;
     }
     
-    return 0;  /* 继续等待数据 */
+    return 0;
     
 PARSE_ERROR:
     /* 解析错误，跳过至少一个字符，重新开始 */
     Usart1Ring_Skip(2);
     g_parse_state = PARSE_STATE_IDLE;
-    g_parse_error = 0;
     return 0;
 }
 
@@ -412,7 +406,6 @@ void Protocol_Init(void)
 {
     g_parse_state = PARSE_STATE_IDLE;
     g_data_index = 0;
-    g_parse_error = 0;
     memset(&g_frame_buffer, 0, sizeof(g_frame_buffer));
 }
 

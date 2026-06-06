@@ -1,10 +1,10 @@
 /************************************************************
  * ©2026CIMC Copyright©
- * 文件名: Function.c (改进版)
+ * 文件名: Function.c (改进版 v2.1)
  * 说明: 用户业务逻辑 - 正确的命令处理循环
  * 作者: Lingyu Meng / Copilot
  * 平台: 2025CIMC IHD-V04
- * 版本: V2.0 2026/06/06 - 修复通讯问题
+ * 版本: V2.1 2026/06/06 - 修复LED兼容性问题
 ************************************************************/
 
 #include "Function.h"
@@ -26,6 +26,20 @@ typedef struct __attribute__((packed)) Parameter_SUM {
 } Parameter_t;
 
 uint8_t config_buf[(20 * 1024)] = { 0 };
+
+/*======================== LED控制宏定义 ========================*/
+/* 根据你的项目自行调整这些宏 */
+#ifndef LED1_ON
+    #define LED1_ON()   do { } while(0)
+#endif
+
+#ifndef LED1_OFF
+    #define LED1_OFF()  do { } while(0)
+#endif
+
+#ifndef LED1_TOG
+    #define LED1_TOG()  do { } while(0)
+#endif
 
 /*======================== 前向声明 ========================*/
 void APP_HandleUpgradeRequest(void);
@@ -64,10 +78,10 @@ static void Protocol_FloatToBytes(float value, uint8_t *bytes)
 {
     uint32_t temp;
     memcpy(&temp, &value, 4);
-    bytes[0] = (temp >> 24) & 0xFF;
-    bytes[1] = (temp >> 16) & 0xFF;
-    bytes[2] = (temp >> 8) & 0xFF;
-    bytes[3] = temp & 0xFF;
+    bytes[0] = (uint8_t)((temp >> 24) & 0xFF);
+    bytes[1] = (uint8_t)((temp >> 16) & 0xFF);
+    bytes[2] = (uint8_t)((temp >> 8) & 0xFF);
+    bytes[3] = (uint8_t)(temp & 0xFF);
 }
 
 /* 从4字节大端序转为IEEE 754单精度浮点数 */
@@ -183,6 +197,10 @@ void UsrFunction(void)
     /* 发送初始心跳 */
     Protocol_SendHeartbeat(g_device_id);
     
+    /* LED闪烁计数器 */
+    uint32_t led_blink_count = 0;
+    uint8_t led_state = 0;
+    
     while (1) {
         /* 更新OLED显示 */
         sprintf((char*)data, "ID:%04X", g_device_id);
@@ -191,12 +209,16 @@ void UsrFunction(void)
         OLED_ShowString(0, 16, data, 16);
         OLED_Refresh();
         
-        /* 系统状态LED指示 (1秒闪烁) */
-        static uint32_t led_count = 0;
-        led_count++;
-        if (led_count > 500) {  /* 假设主循环约2ms执行一次 */
-            LED1_TOG();
-            led_count = 0;
+        /* 系统状态LED指示 (1秒闪烁，约2ms循环一次) */
+        led_blink_count++;
+        if (led_blink_count > 500) {  /* 500 * 2ms = 1秒 */
+            led_state = (led_state == 0) ? 1 : 0;
+            if (led_state) {
+                LED1_ON();
+            } else {
+                LED1_OFF();
+            }
+            led_blink_count = 0;
         }
         
         /*==================== 协议解析循环 ====================*/
@@ -279,14 +301,14 @@ void UsrFunction(void)
 
 void APP_HandleUpgradeRequest(void)
 {
-    uint8_t config_buf[BOOT_PARAM_SIZE] = {0};
+    uint8_t config_buf_local[BOOT_PARAM_SIZE] = {0};
     Parameter_t param;
 
     /* 读取当前BootParam配置 */
     for (uint16_t i = 0; i < BOOT_PARAM_SIZE; i++) {
-        config_buf[i] = internal_flash_read_Char(BOOT_CONFIG_ADDR + i);
+        config_buf_local[i] = internal_flash_read_Char(BOOT_CONFIG_ADDR + i);
     }
-    memcpy(&param, config_buf, sizeof(Parameter_t));
+    memcpy(&param, config_buf_local, sizeof(Parameter_t));
 
     /* 设置升级标志 */
     param.BootParam.updateFlag    = UPDATE_REQUEST_FLAG;
@@ -294,9 +316,9 @@ void APP_HandleUpgradeRequest(void)
     param.BootParam.appSize       = 0;
 
     /* 写入Flash */
-    memcpy(config_buf, &param, sizeof(Parameter_t));
+    memcpy(config_buf_local, &param, sizeof(Parameter_t));
     internal_flash_erase(BOOT_CONFIG_ADDR);
-    internal_flash_write_str_Char(BOOT_CONFIG_ADDR, config_buf, BOOT_PARAM_SIZE);
+    internal_flash_write_str_Char(BOOT_CONFIG_ADDR, config_buf_local, BOOT_PARAM_SIZE);
 
     /* 软件复位，进入Bootloader */
     __set_FAULTMASK(1);

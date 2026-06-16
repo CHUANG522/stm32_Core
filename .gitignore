@@ -1,4 +1,5 @@
-# Keil 编译输出
+# ===================== Keil MDK 全部忽略项 =====================
+# 编译输出文件
 *.o
 *.d
 *.crf
@@ -12,23 +13,70 @@
 *.hex
 *.bin
 *.elf
+*.out
 *.build_log.htm
+*.tra
+
+# 编译输出文件夹
 Listings/
 Objects/
 
-# Keil 临时文件
-*.uvguix.*
+# Keil 用户临时、窗口配置（多人协作必忽略）
+*.uvgui*
 *.bak
 *.admin
 *.iex
 *.browse
 *.lin
-RTE/
+*.dbgconf
+*.dbgconf.*
 
-# 系统文件
+# Keil RTE组件缓存
+RTE/
+RTE_Components.h
+
+# ===================== STM32CubeMX / CubeIDE =====================
+*.ioc.backup
+~$*.ioc
+.cproject
+.project
+.settings/
+.launch
+.cmx
+cmake-build-*
+build/
+Debug/
+Release/
+
+# HAL库编译缓存
+Drivers/*/build/
+Middlewares/*/build/
+
+# ===================== GD32 兆易原厂工程额外产物 =====================
+*.gdscfg
+*.gdscfg.backup
+GCC_Output/
+MDK_Output/
+
+# ===================== VSCode 开发环境忽略 =====================
+.vscode/
+*.code-workspace
+*.suo
+*.user
+*.cache
+compile_commands.json
+
+# ===================== 系统、编辑器缓存文件 =====================
+# Windows
 Thumbs.db
 Desktop.ini
+# Mac
 .DS_Store
-
-# 用户个人配置（保留工程文件，忽略个人布局）
-*.uvgui.*
+# 文本编辑器
+*.swp
+*.swo
+*~
+# Python脚本缓存（工程内烧录/自动化脚本会用到）
+__pycache__/
+*.pyc
+*.pyd

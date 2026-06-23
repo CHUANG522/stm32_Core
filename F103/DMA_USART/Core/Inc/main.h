@@ -57,6 +57,10 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define OLED_Pin GPIO_PIN_8
+#define OLED_GPIO_Port GPIOB
+#define OLEDB9_Pin GPIO_PIN_9
+#define OLEDB9_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

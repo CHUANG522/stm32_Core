@@ -102,6 +102,7 @@ int main(void)
   while (1)
   {
     function();
+	  
 
     /* USER CODE END WHILE */
 

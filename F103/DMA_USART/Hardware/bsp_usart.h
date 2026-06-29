@@ -3,6 +3,6 @@
 #define _BSP_USAER_H
 
 #include "Header.h"
-void send_string(uint8_t  *string);
-
+void send_string(uint8_t *string);
+void send_string_dma(uint8_t *string);
 #endif

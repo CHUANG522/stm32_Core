@@ -24,6 +24,8 @@ void USART_show(void)
 		return; // 1秒发送一次数据
 	time_USART = 0;
 
-	sprintf((char *)USART_buff, "hello\r\n");
-	send_string(USART_buff);
+	sprintf((char *)USART_buff, "Hello Mr.DJ\r\n");
+	// send_string(USART_buff);
+	send_string_dma(USART_buff);
+	// HAL_UART_Transmit_DMA(&huart1, USART_buff, strlen((char *)USART_buff));
 }
